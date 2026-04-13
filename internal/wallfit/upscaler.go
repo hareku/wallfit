@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"image"
+	_ "image/png"
+	"image/png"
 	"log/slog"
 	"math"
 	"os"
@@ -11,7 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/disintegration/imaging"
+	xdraw "golang.org/x/image/draw"
 )
 
 const (
@@ -86,7 +88,7 @@ func (u *Upscaler) Process(ctx context.Context, img image.Image) (result image.I
 	inPath := filepath.Join(tmpDir, "in.png")
 	outPath := filepath.Join(tmpDir, "out.png")
 
-	if err := imaging.Save(img, inPath); err != nil {
+	if err := writePNG(img, inPath); err != nil {
 		return nil, false, fmt.Errorf("writing upscaler input: %w", err)
 	}
 
@@ -101,13 +103,13 @@ func (u *Upscaler) Process(ctx context.Context, img image.Image) (result image.I
 		return nil, false, fmt.Errorf("realesrgan-ncnn-vulkan: %w\n%s", err, out)
 	}
 
-	res, err := imaging.Open(outPath)
+	res, err := openImageFile(outPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("reading upscaler output: %w", err)
 	}
 
 	// Resize down to fit within the target resolution, preserving aspect ratio.
-	res = imaging.Fit(res, u.opts.TargetWidth, u.opts.TargetHeight, imaging.Lanczos)
+	res = fitImage(res, u.opts.TargetWidth, u.opts.TargetHeight)
 	return res, true, nil
 }
 
@@ -125,4 +127,29 @@ func minScaleFactor(srcW, srcH, targetW, targetH int) int {
 	scale = max(scale, esrganMinScale)
 	scale = min(scale, esrganMaxScale)
 	return scale
+}
+
+func writePNG(img image.Image, path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
+}
+
+func fitImage(img image.Image, maxW, maxH int) image.Image {
+	b := img.Bounds()
+	srcW, srcH := b.Dx(), b.Dy()
+	if srcW <= maxW && srcH <= maxH {
+		return img
+	}
+	scaleW := float64(maxW) / float64(srcW)
+	scaleH := float64(maxH) / float64(srcH)
+	scale := math.Min(scaleW, scaleH)
+	dstW := int(math.Round(float64(srcW) * scale))
+	dstH := int(math.Round(float64(srcH) * scale))
+	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, b, xdraw.Src, nil)
+	return dst
 }
