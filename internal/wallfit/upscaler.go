@@ -103,7 +103,7 @@ func (u *Upscaler) Process(ctx context.Context, img image.Image) (result image.I
 		return nil, false, fmt.Errorf("realesrgan-ncnn-vulkan: %w\n%s", err, out)
 	}
 
-	res, err := openImageFile(outPath)
+	res, _, err := openImageFile(outPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("reading upscaler output: %w", err)
 	}

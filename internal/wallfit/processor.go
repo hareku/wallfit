@@ -1,6 +1,7 @@
 package wallfit
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -10,6 +11,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"image/png"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -54,7 +56,7 @@ func (p *Processor) ProcessFile(ctx context.Context, inputPath string) error {
 		return err
 	}
 
-	src, err := openImageFile(inputPath)
+	src, iccProfile, err := openImageFile(inputPath)
 	if err != nil {
 		return fmt.Errorf("opening image %q: %w", inputPath, err)
 	}
@@ -95,7 +97,7 @@ func (p *Processor) ProcessFile(ctx context.Context, inputPath string) error {
 
 	outputPath := outputPath(inputPath, p.opts.Suffix)
 
-	if err := saveImageFile(composite, outputPath, p.opts.JPEGQuality); err != nil {
+	if err := saveImageFile(composite, outputPath, p.opts.JPEGQuality, iccProfile); err != nil {
 		return fmt.Errorf("saving output %q: %w", outputPath, err)
 	}
 
@@ -111,25 +113,47 @@ func outputPath(inputPath, suffix string) string {
 	return base + suffix + ext
 }
 
-func openImageFile(path string) (image.Image, error) {
+// openImageFile decodes an image file and, for JPEG inputs, also extracts the
+// embedded ICC color profile so it can be re-injected into the output.
+// iccProfile is nil for non-JPEG files or when no profile is embedded.
+func openImageFile(path string) (img image.Image, iccProfile []byte, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
-	img, _, err := image.Decode(f)
-	return img, err
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	img, _, err = image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	iccProfile = extractICCFromJPEGBytes(data)
+	return img, iccProfile, nil
 }
 
-func saveImageFile(img image.Image, path string, jpegQuality int) error {
+// saveImageFile encodes img to path. For JPEG outputs, iccProfile (if non-nil)
+// is injected into the file to preserve the original color space.
+func saveImageFile(img image.Image, path string, jpegQuality int, iccProfile []byte) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".jpg", ".jpeg":
-		return jpeg.Encode(f, img, &jpeg.Options{Quality: jpegQuality})
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: jpegQuality}); err != nil {
+			return err
+		}
+		_, err = f.Write(injectICCIntoJPEG(buf.Bytes(), iccProfile))
+		return err
 	case ".png":
 		return png.Encode(f, img)
 	default:
