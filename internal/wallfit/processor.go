@@ -18,6 +18,9 @@ type Options struct {
 	// Suffix is appended to the base filename before the extension.
 	// Defaults to "_16x9".
 	Suffix string
+	// Upscaler is an optional AI upscaler applied before letterboxing.
+	// nil means no upscaling.
+	Upscaler *Upscaler
 }
 
 // Processor converts image files to 16:9 aspect ratio by adding black bars.
@@ -54,18 +57,37 @@ func (p *Processor) ProcessFile(ctx context.Context, inputPath string) error {
 	b := src.Bounds()
 	dims := Compute16x9Canvas(b.Dx(), b.Dy())
 
-	if dims.OffsetX == 0 && dims.OffsetY == 0 {
-		fmt.Printf("%s: already 16:9, skipping\n", inputPath)
-		return nil
+	needsLetterbox := dims.OffsetX != 0 || dims.OffsetY != 0
+
+	var composite image.Image
+	if needsLetterbox {
+		bg := imaging.New(dims.Width, dims.Height, color.Black)
+		composite = imaging.Paste(bg, src, image.Pt(dims.OffsetX, dims.OffsetY))
+	} else {
+		composite = src
 	}
 
-	bg := imaging.New(dims.Width, dims.Height, color.Black)
-	out := imaging.Paste(bg, src, image.Pt(dims.OffsetX, dims.OffsetY))
+	didUpscale := false
+	if p.opts.Upscaler != nil {
+		var upscaled image.Image
+		upscaled, didUpscale, err = p.opts.Upscaler.Process(ctx, composite)
+		if err != nil {
+			return fmt.Errorf("upscaling %q: %w", inputPath, err)
+		}
+		if didUpscale {
+			composite = upscaled
+		}
+	}
+
+	if !needsLetterbox && !didUpscale {
+		fmt.Printf("%s: already 16:9 and meets target size, skipping\n", inputPath)
+		return nil
+	}
 
 	outputPath := outputPath(inputPath, p.opts.Suffix)
 
 	encOpts := []imaging.EncodeOption{imaging.JPEGQuality(p.opts.JPEGQuality)}
-	if err := imaging.Save(out, outputPath, encOpts...); err != nil {
+	if err := imaging.Save(composite, outputPath, encOpts...); err != nil {
 		return fmt.Errorf("saving output %q: %w", outputPath, err)
 	}
 
