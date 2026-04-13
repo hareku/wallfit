@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -80,7 +81,7 @@ func (p *Processor) ProcessFile(ctx context.Context, inputPath string) error {
 	}
 
 	if !needsLetterbox && !didUpscale {
-		fmt.Printf("%s: already 16:9 and meets target size, skipping\n", inputPath)
+		slog.InfoContext(ctx, "already 16:9 and meets target size, skipping", "path", inputPath)
 		return nil
 	}
 
@@ -91,7 +92,7 @@ func (p *Processor) ProcessFile(ctx context.Context, inputPath string) error {
 		return fmt.Errorf("saving output %q: %w", outputPath, err)
 	}
 
-	fmt.Printf("%s -> %s\n", inputPath, outputPath)
+	slog.InfoContext(ctx, "processed", "input", inputPath, "output", outputPath)
 	return nil
 }
 

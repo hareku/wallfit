@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 
@@ -17,6 +18,8 @@ func main() {
 }
 
 func run(args []string) int {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
 	flags := flag.NewFlagSet("wallfit", flag.ContinueOnError)
 	jpegQuality := flags.Int("jpeg-quality", 95, "JPEG encoding quality (1-100)")
 	concurrency := flags.Int("concurrency", runtime.NumCPU(), "number of images to process concurrently (set to 1 when using -upscale to avoid saturating the GPU)")
@@ -64,7 +67,7 @@ func run(args []string) int {
 	}
 
 	if err := g.Wait(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		slog.Error("processing failed", "error", err)
 		return 1
 	}
 

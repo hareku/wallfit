@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -53,7 +54,7 @@ func NewUpscaler(opts UpscalerOptions) *Upscaler {
 		if err == nil {
 			u.binaryPath = path
 		} else {
-			fmt.Fprintf(os.Stderr, "warning: %s not found on PATH, upscaling disabled\n", esrganBinary)
+			slog.Warn("binary not found on PATH, upscaling disabled", "binary", esrganBinary)
 		}
 	}
 	return u
