@@ -52,9 +52,10 @@ func NewUpscaler(opts UpscalerOptions) *Upscaler {
 	if opts.Enabled {
 		path, err := exec.LookPath(esrganBinary)
 		if err == nil {
+			slog.Info("upscaler binary found", "path", path)
 			u.binaryPath = path
 		} else {
-			slog.Warn("binary not found on PATH, upscaling disabled", "binary", esrganBinary)
+			slog.Warn("upscaler binary not found on PATH, upscaling disabled", "binary", esrganBinary)
 		}
 	}
 	return u
@@ -89,6 +90,7 @@ func (u *Upscaler) Process(ctx context.Context, img image.Image) (result image.I
 		return nil, false, fmt.Errorf("writing upscaler input: %w", err)
 	}
 
+	slog.Info("running upscaler", "scale", scale, "binary", u.binaryPath)
 	cmd := exec.CommandContext(ctx, u.binaryPath,
 		"-i", inPath,
 		"-o", outPath,
